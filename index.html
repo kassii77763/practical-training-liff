@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>実技練習マッチング</title>
+    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <style>
+        /* ローディング中のメッセージを優しく演出するスタイル */
+        #loading-overlay {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background-color: var(--bg-color, #F2F2F7);
+            padding: 20px;
+            text-align: center;
+        }
+
+        .loading-message-box {
+            margin-top: 16px;
+            font-size: 14px;
+            color: var(--text-sub, #8E8E93);
+            line-height: 1.6;
+            animation: fadeInOut 2.5s infinite ease-in-out;
+            max-width: 280px;
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0.4; transform: translateY(4px); }
+            50% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0.4; transform: translateY(4px); }
+        }
+        :root {
+            --primary: #06C755;
+            --primary-hover: #05B34C;
+            --danger: #FF3B30; /* キャンセル用の赤色 */
+            --bg-color: #F2F2F7;
+            --card-bg: #FFFFFF;
+            --text-main: #1C1C1E;
+            --text-sub: #8E8E93;
+            --border: #E5E5EA;
+            --nav-height: 64px;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 0;
+            color: var(--text-main);
+            -webkit-tap-highlight-color: transparent;
+            padding-bottom: calc(var(--nav-height) + 20px);
+        }
+
+        header { background: var(--card-bg); padding: 20px 16px 12px; position: sticky; top: 0; z-index: 50; border-bottom: 1px solid var(--border); }
+        h1 { font-size: 1.3rem; font-weight: 700; margin: 0 0 4px 0; }
+        .subtitle { font-size: 0.8rem; color: var(--text-sub); }
+
+        .view-section { display: none; padding: 16px; animation: fadeIn 0.2s ease-out; }
+        .view-section.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        .card { background: var(--card-bg); border-radius: 16px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04); }
+        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+        .time { font-weight: 700; font-size: 1.1rem; }
+        .badge { font-size: 0.7rem; font-weight: 700; padding: 4px 10px; border-radius: 6px; }
+        .badge.open { background: #E3F8EB; color: #048C3B; }
+        .badge.full { background: #FDE8E8; color: #C81E1E; }
+        .info-row { display: flex; margin-bottom: 6px; font-size: 0.9rem; }
+        .info-label { color: var(--text-sub); width: 60px; flex-shrink: 0; font-size: 0.8rem; }
+        .info-value { font-weight: 500; }
+        
+        /* ボタンのデザイン */
+        .btn-join { width: 100%; background: #F2F2F7; color: var(--primary); border: none; border-radius: 10px; padding: 12px; font-size: 0.95rem; font-weight: 600; cursor: pointer; margin-top: 10px; transition: background 0.1s; }
+        .btn-join:active { background: #E5E5EA; }
+        .btn-join:disabled { color: #C7C7CC; cursor: not-allowed; }
+        
+        /* ★キャンセルボタン用のデザイン */
+        .btn-cancel-slot { background: #FFF; color: var(--danger); border: 1px solid var(--danger); }
+        .btn-cancel-slot:active { background: #FFE5E5; }
+
+        .calendar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; font-weight: bold; font-size: 1.1rem; }
+        .cal-nav-btn { background: none; border: none; font-size: 1.2rem; color: var(--primary); cursor: pointer; padding: 4px 12px; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; background: var(--card-bg); padding: 12px; border-radius: 16px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04); margin-bottom: 20px; }
+        .day-name { text-align: center; font-size: 0.75rem; color: var(--text-sub); font-weight: 600; padding-bottom: 8px; }
+        .cal-day { aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.9rem; font-weight: 500; border-radius: 50%; cursor: pointer; position: relative; }
+        .cal-day.active { background: var(--text-main); color: white; }
+        .cal-day.today { color: var(--primary); font-weight: 700; }
+        .cal-day.empty { pointer-events: none; }
+        .dot { width: 5px; height: 5px; background: var(--primary); border-radius: 50%; position: absolute; bottom: 4px; }
+        .selected-date-title { font-size: 1rem; font-weight: bold; margin-bottom: 12px; padding-left: 4px; border-left: 3px solid var(--primary); }
+
+        .fab { position: fixed; bottom: calc(var(--nav-height) + 16px); right: 16px; width: 56px; height: 56px; background: var(--primary); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 300; box-shadow: 0 4px 16px rgba(6, 199, 85, 0.3); cursor: pointer; z-index: 90; transition: transform 0.1s; }
+        .fab:active { transform: scale(0.9); }
+
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 100; opacity: 0; transition: opacity 0.2s; backdrop-filter: blur(2px); }
+        .modal-overlay.show { display: flex; opacity: 1; }
+        .modal-content { background: var(--card-bg); width: 90%; max-width: 400px; border-radius: 20px; padding: 24px; transform: translateY(20px); transition: transform 0.2s; }
+        .modal-overlay.show .modal-content { transform: translateY(0); }
+        .modal-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 20px; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 0.8rem; color: var(--text-sub); margin-bottom: 6px; font-weight: 600; }
+        .form-group input { width: 100%; padding: 12px; background: #F9F9F9; border: 1px solid var(--border); border-radius: 10px; font-size: 1rem; box-sizing: border-box; }
+        .modal-actions { display: flex; gap: 12px; margin-top: 24px; }
+        .btn-cancel { flex: 1; padding: 14px; border: none; background: #F2F2F7; border-radius: 10px; font-weight: 600; cursor: pointer; color: var(--text-main); }
+        .btn-submit { flex: 1; padding: 14px; border: none; background: var(--primary); color: white; border-radius: 10px; font-weight: 600; cursor: pointer; }
+
+        .dialog-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 1000; opacity: 0; transition: opacity 0.2s; backdrop-filter: blur(2px); }
+        .dialog-overlay.show { display: flex; opacity: 1; }
+        .dialog-content { background: var(--card-bg); width: 80%; max-width: 320px; border-radius: 16px; padding: 24px 20px 20px; text-align: center; transform: scale(0.95); transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        .dialog-overlay.show .dialog-content { transform: scale(1); }
+        .dialog-message { font-size: 1rem; font-weight: 600; color: var(--text-main); margin-bottom: 24px; line-height: 1.5; }
+        .dialog-actions { display: flex; gap: 10px; }
+        .dialog-btn { flex: 1; padding: 12px; border: none; border-radius: 10px; font-weight: 600; font-size: 0.95rem; cursor: pointer; }
+        .dialog-btn-cancel { background: #F2F2F7; color: var(--text-main); }
+        .dialog-btn-ok { background: var(--primary); color: white; }
+        .dialog-btn-danger { background: var(--danger); color: white; } /* キャンセル確認用の赤ボタン */
+
+        .bottom-nav { position: fixed; bottom: 0; left: 0; width: 100%; height: var(--nav-height); background: var(--card-bg); border-top: 1px solid var(--border); display: flex; justify-content: space-around; align-items: center; z-index: 80; padding-bottom: env(safe-area-inset-bottom); }
+        .nav-item { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 50%; height: 100%; color: var(--text-sub); cursor: pointer; font-size: 0.7rem; font-weight: 600; }
+        .nav-item.active { color: var(--primary); }
+        .nav-icon { font-size: 1.4rem; margin-bottom: 2px; }
+        #loading { text-align: center; color: var(--text-sub); padding: 40px; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>実技練習マッチング</h1>
+        <div class="subtitle" id="liff-status">LINE認証を確認中...</div>
+        <div class="subtitle" id="header-subtitle">リストで直近の枠を確認</div>
+    </header>
+
+    <div id="view-list" class="view-section active">
+        <div id="loading">読み込み中...</div>
+        <div id="list-container"></div>
+    </div>
+
+    <div id="view-calendar" class="view-section">
+        <div class="calendar-header">
+            <button class="cal-nav-btn" onclick="changeMonth(-1)">◀</button>
+            <span id="cal-month-title">2023年 9月</span>
+            <button class="cal-nav-btn" onclick="changeMonth(1)">▶</button>
+        </div>
+        <div class="calendar-grid" id="calendar-grid"></div>
+        <div class="selected-date-title" id="selected-date-title">選択した日付の予定</div>
+        <div id="calendar-slots-container"></div>
+    </div>
+
+    <div class="fab" onclick="openModal()">＋</div>
+
+    <div class="modal-overlay" id="add-modal">
+        <div class="modal-content">
+            <div class="modal-title">新しい練習枠を設定</div>
+            <div class="form-group"><label>日時</label><input type="datetime-local" id="input-date"></div>
+            <div class="form-group"><label>テーマ (任意)</label><input type="text" id="input-theme" placeholder="例: ROM測定、触診など"></div>
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="closeModal()">キャンセル</button>
+                <button class="btn-submit" onclick="addNewSlot()">作成する</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="dialog-overlay" id="custom-dialog">
+        <div class="dialog-content">
+            <div class="dialog-message" id="dialog-message"></div>
+            <div class="dialog-actions" id="dialog-actions"></div>
+        </div>
+    </div>
+
+    <div class="bottom-nav">
+        <div class="nav-item active" id="nav-list" onclick="switchTab('list')"><div class="nav-icon">📋</div><span>リスト</span></div>
+        <div class="nav-item" id="nav-calendar" onclick="switchTab('calendar')"><div class="nav-icon">📅</div><span>カレンダー</span></div>
+    </div>
+
+    <script>
+        // ★ご自身のWebアプリURL
+        const API_URL = 'https://script.google.com/macros/s/AKfycbyoHvXyUPfkeCrfKXlbmX4D_ROw2s3OkbQrI65EKBlJdbseI3HT-Zlwq1TmtB28w1wk/exec';
+        
+       let userDisplayName = null;
+let allSlotsData = [];
+let liffAuthState = "checking";
+
+let currentCalDate = new Date();
+let selectedDay = new Date().getDate();
+let selectedMonth = new Date().getMonth() + 1;
+
+// LIFFの状態を、タブ説明文とは別の表示領域に出す
+function setLiffStatus(message) {
+  const statusEl = document.getElementById('liff-status');
+  if (statusEl) statusEl.innerText = message;
+}
+
+// LIFF初期化・ログイン・プロフィール取得を一つずつ判定する
+let liffPromise = null;
+function ensureLiffProfile() {
+  if (!liffPromise) {
+    liffPromise = (async () => {
+      try {
+        if (typeof liff === 'undefined') {
+          throw new Error('LIFF SDKが読み込まれていません');
+        }
+
+        liffAuthState = "initializing";
+        const inClientBeforeInit = liff.isInClient();
+        setLiffStatus(inClientBeforeInit
+          ? "LIFFブラウザ確認済み・初期化中..."
+          : "LIFF外で初期化中...");
+
+        // 初期化が無期限に待ち続けないよう、10秒でタイムアウトさせる
+        const initTimeout = new Promise((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(
+              'LIFF初期化が10秒以内に完了しませんでした'
+            ));
+          }, 10000);
+        });
+
+        await Promise.race([
+          liff.init({
+            liffId: "2011372741-pVTKApdl",
+            // LINE外ブラウザとして開かれた場合は初期化時にログインへ誘導
+            withLoginOnExternalBrowser: true
+          }),
+          initTimeout
+        ]);
+
+        const inClient = liff.isInClient();
+        const loggedIn = liff.isLoggedIn();
+        console.log('[LIFF状態]', {
+          inClient: inClient,
+          loggedIn: loggedIn,
+          url: location.href
+        });
+
+        if (!loggedIn) {
+          if (!inClient) {
+            liffAuthState = "login_required";
+            setLiffStatus("LINEログインが必要です");
+            liff.login({ redirectUri: location.href });
+            return null;
+          }
+
+          throw new Error('LIFF内ですがログイン状態を取得できませんでした');
+        }
+
+        liffAuthState = "profile_loading";
+        setLiffStatus("LINEプロフィール取得中...");
+        const profile = await liff.getProfile();
+
+        if (!profile || !profile.displayName) {
+          throw new Error('LINEプロフィールを取得できませんでした');
+        }
+
+        userDisplayName = profile.displayName;
+        liffAuthState = "authenticated";
+        setLiffStatus("LINE: " + userDisplayName);
+
+        renderList();
+        renderCalendar();
+        return userDisplayName;
+
+      } catch (err) {
+        const errorCode = err && err.code ? err.code : '';
+        const errorMessage = err && err.message ? err.message : String(err);
+        liffAuthState = "error";
+        userDisplayName = null;
+        console.error('[LIFFエラー]', {
+          code: errorCode,
+          message: errorMessage,
+          url: location.href
+        });
+        setLiffStatus("LIFFエラー: " + errorCode + " " + errorMessage);
+        return null;
+      }
+    })();
+  }
+  return liffPromise;
+}
+
+// ページ表示直後から認証確認を開始
+ensureLiffProfile();
+
+// 画面読み込み時に即座に実行
+document.addEventListener('DOMContentLoaded', () => {
+  ensureLiffProfile();
+});
+
+window.onload = function () {
+  // 開いた瞬間に即座にデータを読み込みに行く
+  loadData();
+
+  // 10秒ごとに最新データに自動更新
+  setInterval(() => loadData(true), 10000);
+
+  // 画面を開いたと同時に裏でLINEプロフィール取得を開始
+  ensureLiffProfile();
+};
+
+        function showCustomConfirm(message, onConfirm, isDanger = false) {
+            const overlay = document.getElementById('custom-dialog');
+            document.getElementById('dialog-message').innerText = message;
+            const okBtnClass = isDanger ? 'dialog-btn-danger' : 'dialog-btn-ok';
+            document.getElementById('dialog-actions').innerHTML = `
+                <button class="dialog-btn dialog-btn-cancel" onclick="closeCustomDialog()">キャンセル</button>
+                <button class="dialog-btn ${okBtnClass}" id="dialog-confirm-btn">OK</button>
+            `;
+            document.getElementById('dialog-confirm-btn').onclick = () => {
+                closeCustomDialog();
+                if(onConfirm) onConfirm();
+            };
+            overlay.style.display = 'flex';
+            setTimeout(() => overlay.classList.add('show'), 10);
+        }
+
+        function showCustomAlert(message, onOk) {
+            const overlay = document.getElementById('custom-dialog');
+            document.getElementById('dialog-message').innerText = message;
+            document.getElementById('dialog-actions').innerHTML = `
+                <button class="dialog-btn dialog-btn-ok" onclick="closeCustomDialog(); ${onOk ? 'onOk()' : ''}">OK</button>
+            `;
+            overlay.style.display = 'flex';
+            setTimeout(() => overlay.classList.add('show'), 10);
+        }
+
+        function closeCustomDialog() {
+            const overlay = document.getElementById('custom-dialog');
+            overlay.classList.remove('show');
+            setTimeout(() => overlay.style.display = 'none', 200);
+        }
+
+        function loadData(isBackground = false) {
+    
+    // 裏側の自動更新じゃない時だけローディング画面を出す
+  if (!isBackground) {
+    const loader = document.getElementById('loading-overlay');
+    if (loader) loader.style.display = 'flex';
+  }
+
+  fetch(API_URL + '?api=true').then(res => res.json()).then(data => {
+    allSlotsData = data;
+    // ★ 画面全体を覆う透明な幕を確実に消す！
+    const loader = document.getElementById('loading-overlay');
+    if (loader) loader.style.display = 'none';
+
+    renderList();
+    renderCalendar();
+  }).catch(err => {
+    const msg = document.getElementById('loading');
+    if (msg) msg.innerText = '読み込みに失敗しました';
+  });
+}
+
+        function extractMonthDay(dateStr) {
+            const match = String(dateStr).match(/(\d+)\/(\d+)/);
+            if(match) return { m: parseInt(match[1]), d: parseInt(match[2]) };
+            return { m: 0, d: 0 };
+        }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            document.getElementById('view-' + tab).classList.add('active');
+            document.getElementById('nav-' + tab).classList.add('active');
+            if(tab === 'list') { document.getElementById('header-subtitle').innerText = 'リストで直近の枠を確認'; } 
+            else { document.getElementById('header-subtitle').innerText = '日付をタップして予定を確認'; renderCalendar(); }
+        }
+
+        function renderList() {
+            const container = document.getElementById('list-container');
+            container.innerHTML = '';
+            if(allSlotsData.length === 0) { container.innerHTML = '<div style="text-align:center; color:#888; padding:20px;">公開されている枠はありません</div>'; return; }
+            allSlotsData.forEach(slot => { container.appendChild(createCardHTML(slot)); });
+        }
+
+        function renderCalendar() {
+            const year = currentCalDate.getFullYear(); const month = currentCalDate.getMonth();
+            document.getElementById('cal-month-title').innerText = `${year}年 ${month + 1}月`;
+            const firstDay = new Date(year, month, 1).getDay(); const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const grid = document.getElementById('calendar-grid');
+            grid.innerHTML = ['日','月','火','水','木','金','土'].map(d => `<div class="day-name">${d}</div>`).join('');
+            for (let i = 0; i < firstDay; i++) { grid.innerHTML += `<div class="cal-day empty"></div>`; }
+            const today = new Date();
+            for (let i = 1; i <= daysInMonth; i++) {
+                const isToday = (year === today.getFullYear() && month === today.getMonth() && i === today.getDate());
+                const isSelected = (month + 1 === selectedMonth && i === selectedDay);
+                const hasSlot = allSlotsData.some(slot => { const info = extractMonthDay(slot.date); return info.m === month + 1 && info.d === i; });
+                const dotHtml = hasSlot ? `<div class="dot"></div>` : '';
+                const classes = `cal-day ${isToday ? 'today' : ''} ${isSelected ? 'active' : ''}`;
+                grid.innerHTML += `<div class="${classes}" onclick="selectDate(${month + 1}, ${i})">${i}${dotHtml}</div>`;
+            }
+            updateCalendarSlots();
+        }
+
+        function changeMonth(diff) { currentCalDate.setMonth(currentCalDate.getMonth() + diff); renderCalendar(); }
+        function selectDate(m, d) { selectedMonth = m; selectedDay = d; renderCalendar(); }
+
+        function updateCalendarSlots() {
+            document.getElementById('selected-date-title').innerText = `${selectedMonth}月${selectedDay}日の予定`;
+            const container = document.getElementById('calendar-slots-container');
+            container.innerHTML = '';
+            const daySlots = allSlotsData.filter(slot => { const info = extractMonthDay(slot.date); return info.m === selectedMonth && info.d === selectedDay; });
+            if(daySlots.length === 0) { container.innerHTML = `<div style="text-align:center; color:#888; padding:20px; background:#fff; border-radius:12px;">この日の予定はありません</div>`; } 
+            else { daySlots.forEach(slot => { container.appendChild(createCardHTML(slot)); }); }
+        }
+
+        // ★自分が参加済みかどうかを判定してボタンを切り替える
+        function createCardHTML(slot) {
+            const isFull = slot.status === "満員";
+            const partsArray = slot.participants ? slot.participants.split(',').map(s => s.trim()) : [];
+            const isJoined = partsArray.includes(userDisplayName); // 自分がリストにいるかチェック
+
+            let buttonHTML = '';
+            if (isJoined) {
+                // 参加済みの場合はキャンセルボタンを表示（赤枠）
+                buttonHTML = `<button id="btn-${slot.id}" class="btn-join btn-cancel-slot" onclick="cancelSlot('${slot.id}')">参加をキャンセル</button>`;
+            } else {
+                // 未参加の場合は通常の参加ボタン
+                buttonHTML = `<button id="btn-${slot.id}" class="btn-join" ${isFull ? 'disabled' : ''} onclick="joinSlot('${slot.id}')">${isFull ? '満員' : '参加する'}</button>`;
+            }
+
+            const div = document.createElement('div'); div.className = 'card';
+            div.innerHTML = `
+                <div class="card-header"><span class="time">${slot.date}</span><span class="badge ${isFull ? 'full' : 'open'}">${slot.status || '空き'}</span></div>
+                <div class="info-row"><div class="info-label">テーマ</div><div class="info-value">${slot.theme || '未定'}</div></div>
+                <div class="info-row"><div class="info-label">参加者</div><div class="info-value">${slot.participants || 'なし'}</div></div>
+                ${buttonHTML}
+            `;
+            return div;
+        }
+
+        function openModal() {
+            const modal = document.getElementById('add-modal');
+            modal.style.display = 'flex'; setTimeout(() => modal.classList.add('show'), 10);
+            const mStr = String(selectedMonth).padStart(2, '0'); const dStr = String(selectedDay).padStart(2, '0');
+            document.getElementById('input-date').value = `${currentCalDate.getFullYear()}-${mStr}-${dStr}T13:00`;
+        }
+        function closeModal() {
+            const modal = document.getElementById('add-modal');
+            modal.classList.remove('show'); setTimeout(() => modal.style.display = 'none', 200);
+        }
+
+        function formatDateString(dateStr) {
+            try {
+                const d = new Date(dateStr); if (isNaN(d.getTime())) return dateStr;
+                const m = d.getMonth() + 1; const date = d.getDate();
+                const h = d.getHours().toString().padStart(2, '0'); const min = d.getMinutes().toString().padStart(2, '0');
+                const dayStr = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+                return `${m}/${date}(${dayStr}) ${h}:${min}`;
+            } catch(e) { return dateStr; }
+        }
+
+        function addNewSlot() {
+            const rawDateVal = document.getElementById('input-date').value;
+            const themeVal = document.getElementById('input-theme').value;
+            if(!rawDateVal) return showCustomAlert('日時を選択してください');
+            
+            showCustomConfirm('この内容で練習枠を作成しますか？', () => {
+                const formattedDate = formatDateString(rawDateVal);
+                fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'add', date: formattedDate, theme: themeVal }) })
+                .then(res => res.json())
+                .then(data => {
+                    if(data.status === 'success') {
+                        document.getElementById('input-date').value = ''; document.getElementById('input-theme').value = '';
+                        closeModal(); loadData();
+                    } else showCustomAlert('エラーが発生しました');
+                });
+            });
+        }
+
+        async function joinSlot(id) {
+            const profileName = await ensureLiffProfile();
+            if (!profileName) {
+                showCustomAlert('LINE認証を確認できないため、参加登録できません。');
+                return;
+            }
+
+            showCustomConfirm(profileName + ' さん、この練習枠に参加登録しますか?', () => {
+                // ボタンが存在する場合は、通信完了まで仮表示する
+                const btnElement = document.getElementById(`btn-${id}`);
+                if (btnElement) {
+                    btnElement.innerText = "登録中...";
+                    btnElement.disabled = true;
+                }
+
+                fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+                    body: JSON.stringify({ action: 'join', id: id, name: profileName })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        loadData();
+                    } else {
+                        showCustomAlert(data.message || '登録に失敗しました');
+                        loadData();
+                    }
+                })
+                .catch(() => {
+                    showCustomAlert('通信に失敗しました。参加状況を再読み込みします。');
+                    loadData();
+                });
+            });
+        }
+
+      // ★参加キャンセル処理
+async function cancelSlot(id) {
+  const profileName = await ensureLiffProfile();
+  if (!profileName) {
+    showCustomAlert('LINE認証を確認できないため、キャンセルできません。');
+    return;
+  }
+
+  showCustomConfirm('この枠の参加をキャンセルしますか?', () => {
+    fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'cancel', id: id, name: profileName })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === 'success') {
+        loadData();
+      } else {
+        showCustomAlert(data.message || 'キャンセルに失敗しました');
+        loadData();
+      }
+    })
+    .catch(() => {
+      showCustomAlert('通信に失敗しました。参加状況を再読み込みします。');
+      loadData();
+    });
+  }, true);
+}
+    </script>
+</body>
+</html>
+	
