@@ -63,12 +63,14 @@
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 
         .card { background: var(--card-bg); border-radius: 16px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04); }
-        .card.has-participants { border: 2px solid #B7EFCB; background: #F8FFF9; }
+        .card.has-participants { border: 2px solid #B9DDF2; background: #F6FBFF; }
+        .card.my-participation { border: 2px solid #B7EFCB; background: #F8FFF9; }
         .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
         .time { font-weight: 700; font-size: 1.1rem; }
         .badge { font-size: 0.7rem; font-weight: 700; padding: 4px 10px; border-radius: 6px; }
         .badge.open { background: #F2F2F7; color: #636366; }
-        .badge.has-participants { background: #E3F8EB; color: #048C3B; }
+        .badge.has-participants { background: #E8F3FB; color: #146C94; }
+        .badge.my-participation { background: #E3F8EB; color: #048C3B; }
         .badge.full { background: #F2F2F7; color: #636366; }
         .info-row { display: flex; margin-bottom: 6px; font-size: 0.9rem; }
         .info-label { color: var(--text-sub); width: 60px; flex-shrink: 0; font-size: 0.8rem; }
@@ -77,6 +79,7 @@
         /* ボタンのデザイン */
         .btn-join { width: 100%; background: #F2F2F7; color: var(--primary); border: none; border-radius: 10px; padding: 12px; font-size: 0.95rem; font-weight: 600; cursor: pointer; margin-top: 10px; transition: background 0.1s; }
         .btn-join:active { background: #E5E5EA; }
+        .btn-join-action { background: #06C755; color: #FFFFFF; border: 1px solid #05B34C; }
         .btn-join:disabled { color: #C7C7CC; cursor: not-allowed; }
         
         /* ★キャンセルボタン用のデザイン */
@@ -306,7 +309,7 @@ window.onload = function () {
             document.getElementById('dialog-message').innerText = message;
             const okBtnClass = isDanger ? 'dialog-btn-danger' : 'dialog-btn-ok';
             document.getElementById('dialog-actions').innerHTML = `
-                <button class="dialog-btn dialog-btn-cancel" onclick="closeCustomDialog()">キャンセル</button>
+                <button class="dialog-btn dialog-btn-cancel" onclick="closeCustomDialog()">キャンセ���</button>
                 <button class="dialog-btn ${okBtnClass}" id="dialog-confirm-btn">OK</button>
             `;
             document.getElementById('dialog-confirm-btn').onclick = () => {
@@ -472,7 +475,8 @@ window.onload = function () {
             const partsArray = slot.participants ? String(slot.participants).split(',').map(s => s.trim()).filter(Boolean) : [];
             const hasParticipants = partsArray.length > 0;
             const isJoined = partsArray.includes(userDisplayName);
-            const displayStatus = hasParticipants ? '参加者あり' : '空き';
+            const isMyParticipation = isJoined;
+            const displayStatus = isMyParticipation ? '参加中' : (hasParticipants ? '参加者あり' : '空き');
 
             let buttonHTML = '';
             if (isJoined) {
@@ -481,13 +485,13 @@ window.onload = function () {
             } else {
                 // 未参加の場合は通常の参加ボタン
                 // 定員なし。参加者がいても参加ボタンを表示
-                buttonHTML = `<button id="btn-${slot.id}" class="btn-join" onclick="joinSlot('${slot.id}')">参加する</button>`;
+                buttonHTML = `<button id="btn-${slot.id}" class="btn-join btn-join-action" onclick="joinSlot('${slot.id}')">参加する</button>`;
             }
 
             const div = document.createElement('div');
-            div.className = `card${hasParticipants ? ' has-participants' : ''}`;
+            div.className = `card${isMyParticipation ? ' my-participation' : (hasParticipants ? ' has-participants' : '')}`;
             div.innerHTML = `
-                <div class="card-header"><span class="time">${slot.date}</span><span class="badge ${hasParticipants ? 'has-participants' : 'open'}">${displayStatus}</span></div>
+                <div class="card-header"><span class="time">${slot.date}</span><span class="badge ${isMyParticipation ? 'my-participation' : (hasParticipants ? 'has-participants' : 'open')}">${displayStatus}</span></div>
                 <div class="info-row"><div class="info-label">テーマ</div><div class="info-value">${slot.theme || '未定'}</div></div>
                 <div class="info-row"><div class="info-label">参加者</div><div class="info-value">${slot.participants || 'なし'}</div></div>
                 ${buttonHTML}
