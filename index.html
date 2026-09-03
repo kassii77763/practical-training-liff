@@ -195,7 +195,7 @@ function setLiffStatus(message) {
   if (statusEl) statusEl.innerText = message;
 }
 
-// LIFF初期化・ログイン・プロフィール取得を一つずつ判定する
+// LIFF初期化・ログイン・プロフィール取得を一つ�����つ判定する
 let liffPromise = null;
 function ensureLiffProfile() {
   if (!liffPromise) {
@@ -403,6 +403,29 @@ window.onload = function () {
             const date = new Date(year, month - 1, day, hour, minute);
             const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
             return `${month}/${day}(${weekdays[date.getDay()]}) ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+        }
+
+        function getSlotSortTime(dateStr) {
+            const match = String(dateStr).match(/(\d{1,2})\/(\d{1,2})(?:\([^)]*\))?\s+(\d{1,2}):(\d{2})/);
+            if (!match) return Number.MAX_SAFE_INTEGER;
+
+            const now = new Date();
+            const date = new Date(
+                now.getFullYear(),
+                Number(match[1]) - 1,
+                Number(match[2]),
+                Number(match[3]),
+                Number(match[4])
+            );
+            return date.getTime();
+        }
+
+        function sortSlotsByDate(slots) {
+            return [...slots].sort((a, b) => {
+                const timeDiff = getSlotSortTime(a.date) - getSlotSortTime(b.date);
+                if (timeDiff !== 0) return timeDiff;
+                return String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
+            });
         }
 
         function buildCalendarSlotsForSelectedDay() {
