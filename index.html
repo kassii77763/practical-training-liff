@@ -332,26 +332,30 @@ window.onload = function () {
         }
 
         function loadData(isBackground = false) {
-    
-    // 裏側の自動更新じゃない時だけローディング画面を出す
-  if (!isBackground) {
-    const loader = document.getElementById('loading-overlay');
-    if (loader) loader.style.display = 'flex';
-  }
+            // 初回読み込み時だけリスト内にローディング表示を出す。
+            // 自動更新では現在の画面を消さず、裏側で同期する。
+            const loader = document.getElementById('loading');
+            if (!isBackground && loader) {
+                loader.style.display = 'block';
+                loader.innerText = '読み込み中...';
+            }
 
-  fetch(API_URL + '?api=true').then(res => res.json()).then(data => {
-    allSlotsData = data;
-    // ★ 画面全体を覆う透明な幕を確実に消す！
-    const loader = document.getElementById('loading-overlay');
-    if (loader) loader.style.display = 'none';
-
-    renderList();
-    renderCalendar();
-  }).catch(err => {
-    const msg = document.getElementById('loading');
-    if (msg) msg.innerText = '読み込みに失敗しました';
-  });
-}
+            fetch(API_URL + '?api=true')
+                .then(res => res.json())
+                .then(data => {
+                    allSlotsData = Array.isArray(data) ? data : [];
+                    if (loader) loader.style.display = 'none';
+                    renderList();
+                    renderCalendar();
+                })
+                .catch(err => {
+                    if (loader) {
+                        loader.style.display = 'block';
+                        loader.innerText = '読み込みに失敗しました';
+                    }
+                    console.error('[データ読み込みエラー]', err);
+                });
+        }
 
         function extractMonthDay(dateStr) {
             const match = String(dateStr).match(/(\d+)\/(\d+)/);
@@ -364,15 +368,61 @@ window.onload = function () {
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
             document.getElementById('view-' + tab).classList.add('active');
             document.getElementById('nav-' + tab).classList.add('active');
-            if(tab === 'list') { document.getElementById('header-subtitle').innerText = 'リストで直近の枠を確認'; } 
+            if(tab === 'list') { document.getElementById('header-subtitle').innerText = '自分が参加している枠を確認'; } 
             else { document.getElementById('header-subtitle').innerText = '日付をタップして予定を確認'; renderCalendar(); }
+        }
+
+        function getSlotSortTime(dateStr) {
+            const match = String(dateStr).match(/(\d{1,2})\/(\d{1,2})(?:\([^)]*\))?\s+(\d{1,2}):(\d{2})/);
+            if (!match) return Number.MAX_SAFE_INTEGER;
+
+            const now = new Date();
+            const date = new Date(
+                now.getFullYear(),
+                Number(match[1]) - 1,
+                Number(match[2]),
+                Number(match[3]),
+                Number(match[4])
+            );
+            return date.getTime();
+        }
+
+        function sortSlotsByDate(slots) {
+            return [...slots].sort((a, b) => {
+                const timeDiff = getSlotSortTime(a.date) - getSlotSortTime(b.date);
+                if (timeDiff !== 0) return timeDiff;
+                return String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
+            });
+        }
+
+        function getMyJoinedSlots(slots) {
+            if (!userDisplayName) return [];
+            return slots.filter(slot => {
+                const partsArray = slot.participants
+                    ? String(slot.participants).split(',').map(name => name.trim())
+                    : [];
+                return partsArray.includes(userDisplayName);
+            });
         }
 
         function renderList() {
             const container = document.getElementById('list-container');
             container.innerHTML = '';
-            if(allSlotsData.length === 0) { container.innerHTML = '<div style="text-align:center; color:#888; padding:20px;">公開されている枠はありません</div>'; return; }
-            allSlotsData.forEach(slot => { container.appendChild(createCardHTML(slot)); });
+
+            if (!userDisplayName) {
+                const message = liffAuthState === 'error'
+                    ? 'LINE認証を確認できないため、参加枠を表示できません'
+                    : 'LINE認証を確認中...';
+                container.innerHTML = `<div style="text-align:center; color:#888; padding:20px;">${message}</div>`;
+                return;
+            }
+
+            const mySlots = sortSlotsByDate(getMyJoinedSlots(allSlotsData));
+            if (mySlots.length === 0) {
+                container.innerHTML = '<div style="text-align:center; color:#888; padding:20px;">参加中の枠はありません</div>';
+                return;
+            }
+            mySlots.forEach(slot => { container.appendChild(createCardHTML(slot)); });
         }
 
         function renderCalendar() {
@@ -464,10 +514,52 @@ window.onload = function () {
                 .then(data => {
                     if(data.status === 'success') {
                         document.getElementById('input-date').value = ''; document.getElementById('input-theme').value = '';
-                        closeModal(); loadData();
+                        closeModal();
+
+                        // サーバーの再取得を待たず、作成した枠を先に画面へ反映
+                        if (data.slot) {
+                            allSlotsData.push(data.slot);
+                            renderList();
+                            renderCalendar();
+                        }
+                        // 裏側で最新データと同期
+                        loadData(true);
                     } else showCustomAlert('エラーが発生しました');
-                });
+                })
+                .catch(() => showCustomAlert('通信に失敗しました。'));
             });
+        }
+
+        function rememberLocalParticipation(id, profileName, joined) {
+            const slot = allSlotsData.find(item => String(item.id) === String(id));
+            if (!slot) return null;
+
+            const previous = {
+                participants: slot.participants || '',
+                status: slot.status || '空き'
+            };
+            const names = previous.participants
+                ? previous.participants.split(',').map(name => name.trim()).filter(Boolean)
+                : [];
+
+            if (joined) {
+                if (!names.includes(profileName)) names.push(profileName);
+            } else {
+                const index = names.indexOf(profileName);
+                if (index !== -1) names.splice(index, 1);
+                if (names.length === 0) slot.status = '空き';
+            }
+
+            slot.participants = names.join(', ');
+            return { slot, previous };
+        }
+
+        function restoreLocalParticipation(change) {
+            if (!change) return;
+            change.slot.participants = change.previous.participants;
+            change.slot.status = change.previous.status;
+            renderList();
+            renderCalendar();
         }
 
         async function joinSlot(id) {
@@ -478,12 +570,10 @@ window.onload = function () {
             }
 
             showCustomConfirm(profileName + ' さん、この練習枠に参加登録しますか?', () => {
-                // ボタンが存在する場合は、通信完了まで仮表示する
-                const btnElement = document.getElementById(`btn-${id}`);
-                if (btnElement) {
-                    btnElement.innerText = "登録中...";
-                    btnElement.disabled = true;
-                }
+                // サーバー応答を待たず、まず画面上の参加者へ反映
+                const change = rememberLocalParticipation(id, profileName, true);
+                renderList();
+                renderCalendar();
 
                 fetch(API_URL, {
                     method: 'POST',
@@ -493,48 +583,53 @@ window.onload = function () {
                 .then(res => res.json())
                 .then(data => {
                     if (data.status === 'success') {
-                        loadData();
+                        // 裏側で最新データと同期。画面は待たせない
+                        loadData(true);
                     } else {
+                        restoreLocalParticipation(change);
                         showCustomAlert(data.message || '登録に失敗しました');
-                        loadData();
                     }
                 })
                 .catch(() => {
-                    showCustomAlert('通信に失敗しました。参加状況を再読み込みします。');
-                    loadData();
+                    restoreLocalParticipation(change);
+                    showCustomAlert('通信に失敗しました。参加状況を元に戻しました。');
                 });
             });
         }
 
-      // ★参加キャンセル処理
-async function cancelSlot(id) {
-  const profileName = await ensureLiffProfile();
-  if (!profileName) {
-    showCustomAlert('LINE認証を確認できないため、キャンセルできません。');
-    return;
-  }
+        // 参加キャンセル処理：成功応答を待たずに画面へ反映
+        async function cancelSlot(id) {
+            const profileName = await ensureLiffProfile();
+            if (!profileName) {
+                showCustomAlert('LINE認証を確認できないため、キャンセルできません。');
+                return;
+            }
 
-  showCustomConfirm('この枠の参加をキャンセルしますか?', () => {
-    fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'cancel', id: id, name: profileName })
-    })
-    .then(res => res.json())
-    .then(data => {
-      if (data.status === 'success') {
-        loadData();
-      } else {
-        showCustomAlert(data.message || 'キャンセルに失敗しました');
-        loadData();
-      }
-    })
-    .catch(() => {
-      showCustomAlert('通信に失敗しました。参加状況を再読み込みします。');
-      loadData();
-    });
-  }, true);
-}
+            showCustomConfirm('この枠の参加をキャンセルしますか?', () => {
+                const change = rememberLocalParticipation(id, profileName, false);
+                renderList();
+                renderCalendar();
+
+                fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'cancel', id: id, name: profileName })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        loadData(true);
+                    } else {
+                        restoreLocalParticipation(change);
+                        showCustomAlert(data.message || 'キャンセルに失敗しました');
+                    }
+                })
+                .catch(() => {
+                    restoreLocalParticipation(change);
+                    showCustomAlert('通信に失敗しました。参加状況を元に戻しました。');
+                });
+            }, true);
+        }
     </script>
 </body>
 </html>
