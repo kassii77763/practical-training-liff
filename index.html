@@ -309,7 +309,7 @@ window.onload = function () {
             document.getElementById('dialog-message').innerText = message;
             const okBtnClass = isDanger ? 'dialog-btn-danger' : 'dialog-btn-ok';
             document.getElementById('dialog-actions').innerHTML = `
-                <button class="dialog-btn dialog-btn-cancel" onclick="closeCustomDialog()">キャンセ���</button>
+                <button class="dialog-btn dialog-btn-cancel" onclick="closeCustomDialog()">キャンセル</button>
                 <button class="dialog-btn ${okBtnClass}" id="dialog-confirm-btn">OK</button>
             `;
             document.getElementById('dialog-confirm-btn').onclick = () => {
@@ -373,11 +373,34 @@ window.onload = function () {
             else { document.getElementById('header-subtitle').innerText = '日付をタップして予定を確認'; renderCalendar(); }
         }
 
+        function getMyJoinedSlots(slots) {
+            if (!userDisplayName) return [];
+            return slots.filter(slot => {
+                const names = slot.participants
+                    ? String(slot.participants).split(',').map(name => name.trim()).filter(Boolean)
+                    : [];
+                return names.includes(userDisplayName);
+            });
+        }
+
         function renderList() {
             const container = document.getElementById('list-container');
             container.innerHTML = '';
-            if(allSlotsData.length === 0) { container.innerHTML = '<div style="text-align:center; color:#888; padding:20px;">公開されている枠はありません</div>'; return; }
-            allSlotsData.forEach(slot => { container.appendChild(createCardHTML(slot)); });
+
+            if (!userDisplayName) {
+                container.innerHTML = '<div style="text-align:center; color:#888; padding:20px;">LINE認証を確認中...</div>';
+                return;
+            }
+
+            const mySlots = sortSlotsByDate(getMyJoinedSlots(allSlotsData));
+            if (mySlots.length === 0) {
+                container.innerHTML = '<div style="text-align:center; color:#888; padding:20px;">参加中の枠はありません</div>';
+                return;
+            }
+
+            mySlots.forEach(slot => {
+                container.appendChild(createCardHTML(slot));
+            });
         }
 
         function renderCalendar() {
@@ -538,6 +561,12 @@ window.onload = function () {
             });
         }
 
+        function findSlotForAction(id) {
+            const fromData = allSlotsData.find(slot => String(slot.id) === String(id));
+            if (fromData) return fromData;
+            return buildCalendarSlotsForSelectedDay().find(slot => String(slot.id) === String(id)) || null;
+        }
+
         async function joinSlot(id) {
             const profileName = await ensureLiffProfile();
             if (!profileName) {
@@ -556,7 +585,16 @@ window.onload = function () {
                 fetch(API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-                    body: JSON.stringify({ action: 'join', id: id, name: profileName })
+                    body: JSON.stringify((() => {
+                        const slot = findSlotForAction(id);
+                        return {
+                            action: 'join',
+                            id: id,
+                            date: slot ? slot.date : '',
+                            theme: slot ? (slot.theme || '未定') : '未定',
+                            name: profileName
+                        };
+                    })())
                 })
                 .then(res => res.json())
                 .then(data => {
@@ -586,7 +624,15 @@ async function cancelSlot(id) {
     fetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'cancel', id: id, name: profileName })
+      body: (() => {
+        const slot = findSlotForAction(id);
+        return JSON.stringify({
+          action: 'cancel',
+          id: id,
+          date: slot ? slot.date : '',
+          name: profileName
+        });
+      })()
     })
     .then(res => res.json())
     .then(data => {
